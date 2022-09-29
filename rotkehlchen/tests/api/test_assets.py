@@ -436,7 +436,7 @@ def test_get_all_assets(rotkehlchen_api_server):
 
 def test_get_assets_mappings(rotkehlchen_api_server):
     """Test that providing a list of asset identifiers, the appropriate assets mappings are returned."""  # noqa: E501
-    queried_assets = ('BTC', 'TRY', 'EUR')
+    queried_assets = ('BTC', 'TRY', 'EUR', 'eip155:1/erc20:0x6B175474E89094C44Da98b954EedeAC495271d0F')  # noqa: E501
     response = requests.post(
         api_url_for(
             rotkehlchen_api_server,
@@ -445,11 +445,15 @@ def test_get_assets_mappings(rotkehlchen_api_server):
         json={'identifiers': queried_assets},
     )
     result = assert_proper_response_with_result(response)
-    assert len(result) == 3
-    for identifier in result.keys():
+    assert len(result) == len(queried_assets)
+    for identifier, details in result.items():
         assert identifier in queried_assets
+        if identifier == queried_assets[-1]:
+            assert details['chain'] == 'ethereum'
+        else:
+            assert 'chain' not in details.keys()
 
-    # check that providing multiple order_by_attributes fails
+    # check that providing a wrong identifier fails
     response = requests.post(
         api_url_for(
             rotkehlchen_api_server,
@@ -607,6 +611,45 @@ def test_search_assets(rotkehlchen_api_server):
     result = assert_proper_response_with_result(response)
     assert {asset['chain'] for asset in result} == {'matic', 'optimism', 'ethereum', 'arbitrum', 'binance'}  # noqa: E501
 
+    # check that using chain filter works.
+    response = requests.post(
+        api_url_for(
+            rotkehlchen_api_server,
+            'assetssearchresource',
+        ),
+        json={
+            'value': 'DAI',
+            'search_column': 'symbol',
+            'limit': 50,
+            'chain': 'ethereum',
+            'order_by_attributes': ['name'],
+            'ascending': [True],
+        },
+    )
+    result = assert_proper_response_with_result(response)
+    assert 50 >= len(result) > 10
+    assert all(['ethereum' == entry['chain'] for entry in result])
+    for entry in result:
+        assert 'DAI' in entry['symbol']
+    assert_asset_result_order(data=result, is_ascending=True, order_field='name')
+
+    # check that using an unsupported chain fails
+    response = requests.post(
+        api_url_for(
+            rotkehlchen_api_server,
+            'assetssearchresource',
+        ),
+        json={
+            'value': 'dai',
+            'search_column': 'symbol',
+            'limit': 50,
+            'chain': 'near',
+            'order_by_attributes': ['name'],
+            'ascending': [True],
+        },
+    )
+    assert_error_response(response, contained_in_msg='Failed to deserialize ChainID value near')
+
 
 def test_search_assets_with_levenshtein(rotkehlchen_api_server):
     """Test that searching for assets using a keyword works(levenshtein approach)."""
@@ -699,3 +742,40 @@ def test_search_assets_with_levenshtein(rotkehlchen_api_server):
     )
     result = assert_proper_response_with_result(response)
     assert len(result) == 0
+
+    # check that using chain filter works.
+    response = requests.post(
+        api_url_for(
+            rotkehlchen_api_server,
+            'assetssearchlevenshteinresource',
+        ),
+        json={
+            'value': 'dai',
+            'limit': 50,
+            'chain': 'ethereum',
+        },
+    )
+    result = assert_proper_response_with_result(response)
+    assert 50 >= len(result) > 10
+    assert all(['ethereum' == entry['chain'] for entry in result])
+    assert_substring_in_search_result(result, 'dai')
+    # check that Dai(DAI) appears at the top of result.
+    assert_asset_at_top_position(
+        asset_id='eip155:1/erc20:0x6B175474E89094C44Da98b954EedeAC495271d0F',
+        max_position_index=0,
+        result=result,
+    )
+
+    # check that using an unsupported chain fails
+    response = requests.post(
+        api_url_for(
+            rotkehlchen_api_server,
+            'assetssearchlevenshteinresource',
+        ),
+        json={
+            'value': 'dai',
+            'limit': 50,
+            'chain': 'near',
+        },
+    )
+    assert_error_response(response, contained_in_msg='Failed to deserialize ChainID value near')
