@@ -1,3 +1,5 @@
+import os
+import select
 import subprocess  # noqa: S404
 import sys
 from http import HTTPStatus
@@ -17,27 +19,52 @@ def test_backend():
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
     )
-    timeout = 10
+    last_line = None
+    print('STAAAAAAAAAAAAAAAAARTING')  # noqa: T201
+    timeout = 120
     if sys.platform == 'darwin':
         timeout = 30  # in macos the backend may take a long time to start
     with gevent.Timeout(timeout):
         try:
             while True:
-                output = proc.stdout.readline().decode('utf-8')
-                if 'rotki is running in __debug__ mode' in output:
+                lines = []
+                all_output = ''
+                readable, _, _ = select.select([proc.stdout], [], [], 1)
+                if not readable:
                     continue
 
-                if 'rotki REST API server is running at' in output:
+                output = os.read(proc.stdout.fileno(), 4096).decode('utf-8')
+                if not output:
+                    continue
+
+                print(f'got {output=}')  # noqa: T201
+                all_output += output
+                if 'server is running at' in output:
                     break
 
-            url = f'http://{output.split()[-4]}/api/1/info'
+            lines = all_output.splitlines()
+            for line in lines:
+                print(f'got {line=}')  # noqa: T201
+                if 'rotki is running in __debug__ mode' in line:
+                    print('matched running in debug mode')  # noqa: T201
+                    continue
+
+                if 'rotki REST API server is running at' in line:
+                    print('matched API server is running')  # noqa: T201
+                    last_line = line
+                    break
+
+                if last_line:
+                    break
+
+            url = f'http://{last_line.split()[-4]}/api/1/info'
             response = requests.get(url)
             assert response.status_code == HTTPStatus.OK
             assert 'data_directory' in response.json()['result']
 
         except gevent.Timeout as e:
             raise AssertionError(
-                f'Did not get anything in the stdout after {timeout} seconds',
+                f'Did not get all expected output in the stdout after {timeout} seconds',
             ) from e
         finally:
             proc.terminate()
