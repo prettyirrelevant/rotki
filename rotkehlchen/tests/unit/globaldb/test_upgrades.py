@@ -1148,6 +1148,18 @@ def test_upgrade_v12_v13(globaldb: GlobalDBHandler, messages_aggregator):
             tuple(protocol_mapping),
         ).fetchone()[0]) > 0
 
+        balancer_cache_mapping = {  # define before/after mapping for cache keys
+            'BALANCER_GAUGES11': 'BALANCER_V1_GAUGES1',
+            'BALANCER_GAUGES12': 'BALANCER_V2_GAUGES1',
+            'BALANCER_GAUGES1001': 'BALANCER_V1_GAUGES100',
+            'BALANCER_GAUGES1002': 'BALANCER_V2_GAUGES100',
+            'BALANCER_GAUGES421611': 'BALANCER_V1_GAUGES42161',
+            'BALANCER_GAUGES1372': 'BALANCER_V2_GAUGES137',
+            'BALANCER_GAUGES84532': 'BALANCER_V2_GAUGES8453',
+        }
+        # Count existing balancer cache entries before upgrade
+        assert (balancer_gauges_count := cursor.execute("SELECT COUNT(*) FROM general_cache WHERE key LIKE 'BALANCER_GAUGES%'").fetchone()[0]) == 9  # noqa: E501
+
     with ExitStack() as stack:
         patch_for_globaldb_upgrade_to(stack, 13)
         maybe_upgrade_globaldb(
@@ -1234,6 +1246,10 @@ def test_upgrade_v12_v13(globaldb: GlobalDBHandler, messages_aggregator):
                 f"SELECT COUNT(*) FROM evm_tokens WHERE protocol IN ({','.join(['?' for _ in protocols])})",  # noqa: E501
                 tuple(protocols),
             ).fetchone()[0] == expected_count
+
+        # Verify balancer cache migration: old keys gone, new keys exist with same count
+        assert cursor.execute('SELECT COUNT(*) FROM general_cache WHERE key LIKE "BALANCER_GAUGES%"').fetchone()[0] == 0  # noqa: E501
+        assert cursor.execute('SELECT COUNT(*) FROM general_cache WHERE key IN (?, ?, ?, ?, ?, ?, ?)', list(balancer_cache_mapping.values())).fetchone()[0] == balancer_gauges_count  # noqa: E501
 
 
 @pytest.mark.parametrize('custom_globaldb', ['v2_global.db'])
