@@ -22,17 +22,10 @@ def process_solana_asset_migration(
         return []
 
     asset_updates, solana_tokens_data = [], []
-    duplicated_tokens = ('TRISIG', 'HODLSOL')  # TRISIG maps to TRISG & HODLSOL maps to HODL
-
-    # Tables that need unique identifiers (only update one of duplicates)
-    unique_tables = {'assets', 'common_asset_details', 'solana_tokens'}
     with csv_file.open(encoding='utf-8') as f:
         reader = csv.DictReader(f)
         for row in reader:
-            if (old_id := row['old_id']) in duplicated_tokens:  # skip duplicate mapping
-                continue
-
-            asset_updates.append((new_id := f'solana/token:{row["address"]}', old_id))
+            asset_updates.append((new_id := f'solana/token:{row["address"]}', row['old_id']))
             solana_tokens_data.append((
                 new_id,
                 'D',  # spl token
@@ -49,10 +42,12 @@ def process_solana_asset_migration(
         ('solana/token:BLDiYcvm3CLcgZ7XUBPgz6idSAkNmWY6MBbm8Xpjpump', 'TRISIG'),
         ('solana/token:58UC31xFjDJhv1NnBF73mtxcsxN92SWjhYRzbfmvDREJ', 'HODLSOL'),
     ]
+    # For unique tables, only use CSV data. For reference tables, include duplicate mappings
+    unique_tables = {'assets', 'common_asset_details', 'solana_tokens'}
     for table_name, column_name in table_updates:
-        if table_name in unique_tables:  # only update non-duplicates from CSV
+        if table_name in unique_tables:
             updates_to_apply = asset_updates
-        else:  # update all including duplicates
+        else:  # update all including duplicates for reference tables
             updates_to_apply = asset_updates + duplicate_mappings
 
         when_clauses, params, in_clause_params = [], [], []
