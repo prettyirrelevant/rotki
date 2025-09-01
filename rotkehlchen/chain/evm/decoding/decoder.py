@@ -570,9 +570,21 @@ class EVMTransactionDecoder(ABC):
         """
         maybe_modified = False
         if transaction.to_address is not None:
-            address_counterparty = self.rules.addresses_to_counterparties.get(transaction.to_address)  # noqa: E501
-            if address_counterparty is not None:
-                counterparties.add(address_counterparty)
+            # EIP-7702 delegation: to_address points to user's wallet instead of target contract
+            # Check log addresses against mapping to find actual interacted protocols
+            if (
+                transaction.from_address == transaction.to_address and
+                transaction.authorization_list is not None and
+                len(transaction.authorization_list) > 0
+            ):
+                for log_address in {tx_log.address for tx_log in all_logs}:
+                    address_counterparty = self.rules.addresses_to_counterparties.get(log_address)
+                    if address_counterparty is not None:
+                        counterparties.add(address_counterparty)
+            else:
+                address_counterparty = self.rules.addresses_to_counterparties.get(transaction.to_address)  # noqa: E501
+                if address_counterparty is not None:
+                    counterparties.add(address_counterparty)
 
         rules = self._chain_specific_post_decoding_rules(transaction)
         # get the rules that need to be applied by counterparty
