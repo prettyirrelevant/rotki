@@ -147,6 +147,7 @@ const deletion = useHistoryEventsDeletion(
   groupedEventsByTxRef,
   originalGroups,
   () => actions.fetch.dataAndLocations(),
+  pageParams,
 );
 
 const {
@@ -173,6 +174,11 @@ function handleUpdateEventIds({ eventIds, groupedEvents, rawEvents }: { eventIds
   // Store the original groups data - prefer rawEvents if available, otherwise use groups.data
   set(originalGroups, rawEvents || get(groups).data);
 }
+
+// Set total matching count from groups
+watchImmediate(groups, (newGroups) => {
+  selectionMode.setTotalMatchingCount(newGroups.found);
+});
 
 const queryToDialogMap: Record<string, DialogShowOptions> = {
   openDecodingStatusDialog: { type: DIALOG_TYPES.DECODING_STATUS },
